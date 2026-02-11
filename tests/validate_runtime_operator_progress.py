@@ -1,0 +1,99 @@
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def contains(path: str, snippets: list[str]) -> None:
+    text = (ROOT / path).read_text(encoding="utf-8")
+    for snippet in snippets:
+        assert snippet in text, f"{path} missing: {snippet}"
+
+
+def main() -> None:
+    contains(
+        "src/Desktop/Runtime/DesktopRuntimeOperator.cs",
+        [
+            "record RuntimeUpdateResult",
+            "bool IsNoticeChanged",
+            "P3ProgressSnapshot Progress",
+            "private readonly IP3ProgressProbe? _progressProbe;",
+            "iconSourceReady: _progressProbe?.IsIconSourceReady() ?? false",
+            "if (notice != RuntimeUserNotice.None && changed)",
+        ],
+    )
+
+    contains(
+        "src/Desktop/Runtime/P3ProgressEstimator.cs",
+        [
+            "record P3ProgressSnapshot",
+            "public int CompletedIssueCount",
+            "public double CompletionPercent => CompletedIssueCount / 8d * 100d;",
+        ],
+    )
+
+    contains(
+        "src/Desktop/Runtime/P3ProgressProbe.cs",
+        [
+            "interface IP3ProgressProbe",
+            "class P3ProgressProbe",
+            "health.GetHealth().IsReady",
+            "return _provider.LastRefreshSucceeded;",
+        ],
+    )
+
+
+    contains(
+        "src/Desktop/Icons/DesktopIconSourceHealth.cs",
+        [
+            "record DesktopIconSourceHealth",
+            "interface IDesktopIconSourceHealthProvider",
+        ],
+    )
+
+    contains(
+        "src/Desktop/Icons/RetryingDesktopIconSource.cs",
+        [
+            "class RetryingDesktopIconSource",
+            "IDesktopIconSourceHealthProvider",
+            "GetHealth()",
+            "_consecutiveFailures",
+        ],
+    )
+
+    contains(
+        "src/Desktop/Icons/Win32ExplorerIconSource.cs",
+        [
+            "class Win32ExplorerIconSource",
+            "RuntimeInformation.IsOSPlatform",
+            "IDesktopIconSourceHealthProvider",
+            "Environment.SpecialFolder.DesktopDirectory",
+            "FindWindowEx",
+            "LVM_GETITEMCOUNT",
+        ],
+    )
+
+    contains(
+        "src/Desktop/Icons/DesktopIconProviderFactory.cs",
+        [
+            "class DesktopIconProviderFactory",
+            "new Win32ExplorerIconSource()",
+            "new RetryingDesktopIconSource",
+        ],
+    )
+    contains(
+        "src/Desktop/Icons/DesktopIconProvider.cs",
+        [
+            "public int SourceFailureCount",
+            "public int ConsecutiveSourceFailures",
+            "ConsecutiveSourceFailures = 0;",
+            "ConsecutiveSourceFailures++;",
+            "IDesktopIconSourceHealthProvider",
+            "healthProvider.GetHealth()",
+        ],
+    )
+
+    print("ok: runtime operator progress validated")
+
+
+if __name__ == "__main__":
+    main()

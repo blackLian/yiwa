@@ -1,0 +1,15 @@
+{
+  "id": "cute",
+  "displayName": "可爱治愈猫",
+  "poseAssets": [
+    "cute_loaf.3dgs",
+    "cute_side_lie.3dgs",
+    "cute_sit.3dgs",
+    "cute_peek.3dgs"
+  ],
+  "behavior": {
+    "mouseApproachProbability": 0.75,
+    "iconCuriosityProbability": 0.7,
+    "clickGreetingProbability": 0.85
+  }
+}
