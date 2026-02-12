@@ -6,7 +6,7 @@
 
 - [x] ISSUE-01：已完成状态化窗口宿主 + 透明/置顶样式服务抽象。
 - [x] ISSUE-02：已完成点击穿透切换控制与强制恢复交互接口。
-- [x] ISSUE-03：图标坐标采集 Provider（已支持 Explorer ListView 句柄发现 + item count + per-icon 原生坐标+名称读取（LVM_GETITEMPOSITION/LVM_GETITEMTEXTW/ReadProcessMemory），并加入原生顺序归一化、名称去重回填，保留工作区网格回退）。
+- [x] ISSUE-03：图标坐标采集 Provider（已支持 Explorer ListView 句柄发现 + item count + per-icon 原生坐标+名称读取（LVM_GETITEMPOSITION/LVM_GETITEMTEXTW/ReadProcessMemory），并加入原生顺序归一化、名称去重回填（优先使用未消费 Desktop 名称池），保留工作区网格回退）。
 - [x] ISSUE-04：交互编排器已支持 icon list 路由碰撞。
 - [x] ISSUE-06：已加入失败降频 + 成功后恢复首选频率调度器，并可输出恢复状态快照。
 - [x] ISSUE-07：已加入集成诊断日志、运行时 advisory 输出、非阻塞用户提示与提示去重日志策略。

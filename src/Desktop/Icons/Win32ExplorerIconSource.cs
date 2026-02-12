@@ -100,17 +100,25 @@ public sealed class Win32ExplorerIconSource : IDesktopIconSource, IDesktopIconSo
             .ThenBy(static i => i.Y)
             .ToArray();
 
-        // Some systems return duplicate/blank names from native ListView reads.
-        // Reconcile with Desktop names to keep deterministic and user-friendly bubbles.
+        // Build a case-insensitive pool of desktop names that were not consumed by native text.
+        var remainingFallbackNames = new Queue<string>(fallbackNames);
         var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         for (var i = 0; i < ordered.Length; i++)
         {
             var current = ordered[i];
-            var candidate = current.Name;
+            var candidate = current.Name?.Trim() ?? string.Empty;
 
-            if (string.IsNullOrWhiteSpace(candidate) || used.Contains(candidate))
+            if (!string.IsNullOrWhiteSpace(candidate) && !used.Contains(candidate))
             {
-                candidate = i < fallbackNames.Count ? fallbackNames[i] : $"desktop-item-{i}";
+                used.Add(candidate);
+                continue;
+            }
+
+            candidate = TakeNextAvailableFallbackName(remainingFallbackNames, used);
+            if (string.IsNullOrWhiteSpace(candidate))
+            {
+                candidate = $"desktop-item-{i}";
             }
 
             if (used.Contains(candidate))
@@ -119,13 +127,26 @@ public sealed class Win32ExplorerIconSource : IDesktopIconSource, IDesktopIconSo
             }
 
             used.Add(candidate);
-            if (!candidate.Equals(current.Name, StringComparison.Ordinal))
-            {
-                ordered[i] = current with { Name = candidate };
-            }
+            ordered[i] = current with { Name = candidate };
         }
 
         return ordered;
+    }
+
+    private static string TakeNextAvailableFallbackName(Queue<string> remainingFallbackNames, HashSet<string> used)
+    {
+        while (remainingFallbackNames.Count > 0)
+        {
+            var next = remainingFallbackNames.Dequeue();
+            if (string.IsNullOrWhiteSpace(next) || used.Contains(next))
+            {
+                continue;
+            }
+
+            return next;
+        }
+
+        return string.Empty;
     }
 
     private static IReadOnlyList<string> ReadDesktopNames()

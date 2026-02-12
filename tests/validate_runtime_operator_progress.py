@@ -83,6 +83,9 @@ def main() -> None:
             "current with { Name = candidate }",
             "used.Contains(candidate)",
             "HashSet<string>(StringComparer.OrdinalIgnoreCase)",
+            "remainingFallbackNames",
+            "Queue<string>(fallbackNames)",
+            "TakeNextAvailableFallbackName",
         ],
     )
 
