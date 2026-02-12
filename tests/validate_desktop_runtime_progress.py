@@ -25,6 +25,9 @@ def main() -> None:
             "IconSourceMode: _iconProvider is DesktopIconProvider",
             "LastSourceError",
             "IconSourceMode",
+            "TrackAdvisory(RuntimeAdvisory advisory)",
+            "AdvisoryNativePartialCount",
+            "AdvisoryUseCachedCount",
         ],
     )
 

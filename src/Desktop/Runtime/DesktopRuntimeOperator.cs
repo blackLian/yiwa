@@ -18,7 +18,8 @@ public sealed record RuntimeUpdateResult(
     RuntimeUserNotice Notice,
     string NoticeText,
     bool IsNoticeChanged,
-    P3ProgressSnapshot Progress);
+    P3ProgressSnapshot Progress,
+    string RuntimeStatusSummary);
 
 public sealed class DesktopRuntimeOperator
 {
@@ -59,7 +60,13 @@ public sealed class DesktopRuntimeOperator
             iconSourceReady: _progressProbe?.IsIconSourceReady() ?? false,
             hasAcceptanceScript: _hasAcceptanceScript);
 
-        return new RuntimeUpdateResult(tick, health, notice, text, changed, progress);
+        var summary = BuildRuntimeStatusSummary(health, progress);
+        return new RuntimeUpdateResult(tick, health, notice, text, changed, progress, summary);
+    }
+
+    private static string BuildRuntimeStatusSummary(RuntimeHealthSnapshot health, P3ProgressSnapshot progress)
+    {
+        return $"progress={progress.CompletionPercent:0.0}% ({progress.CompletedIssueCount}/8), source={health.IconSourceMode}, advisories[cached={health.AdvisoryUseCachedCount},partial={health.AdvisoryNativePartialCount},fallback={health.AdvisoryFallbackGridCount},recovery={health.AdvisoryRecoveryCount}]";
     }
 
     private static (RuntimeUserNotice, string) ResolveNotice(RuntimeTickResult tick, RuntimeHealthSnapshot health)

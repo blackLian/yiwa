@@ -26,13 +26,13 @@
 
 6. 检查 `RuntimeTickResult.Advisory`：无图标时应为 `UseCachedIcons`，native 部分映射应为 `NativePartialMapping`，回退网格映射应为 `FallbackGridMapping`，连续失败降频后应出现 `EnterRecoveryMode`。
 
-7. 调用 `DesktopIntegrationRuntime.GetHealthSnapshot()`，确认 `ConsecutiveFailures`、`IsInRecoveryMode`、Info/Warn 计数，以及 `IconSourceMode/LastSourceError` 符合预期。
+7. 调用 `DesktopIntegrationRuntime.GetHealthSnapshot()`，确认 `ConsecutiveFailures`、`IsInRecoveryMode`、Info/Warn 计数，以及 `IconSourceMode/LastSourceError` 与 advisory 计数符合预期。
 
 8. 调用 `DesktopRuntimeOperator.Update(...)`，验证 `RuntimeUserNotice` 在 `UseCachedIcons`/恢复模式场景下会给出非阻塞提示。
 
 9. 连续两次同类型异常时，`DesktopRuntimeOperator.Update(...)` 应保持 notice 但 `IsNoticeChanged=false`，避免 warning 日志刷屏。
 
-10. 在每次 `DesktopRuntimeOperator.Update(...)` 后读取 `result.Progress.CompletionPercent` 输出当前实现完成度（例如 75.0%）。
+10. 在每次 `DesktopRuntimeOperator.Update(...)` 后读取 `result.Progress.CompletionPercent` 输出当前实现完成度（例如 75.0%），并输出 `result.RuntimeStatusSummary` 作为运行状态摘要。
 
 11. 通过 `P3ProgressProbe` 注入 `DesktopRuntimeOperator`，确保完成度仅在图标源真实可用后提升，避免因临时缓存造成误判。
 

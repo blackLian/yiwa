@@ -34,7 +34,11 @@ public sealed record RuntimeHealthSnapshot(
     int InfoLogCount,
     int WarnLogCount,
     IconSourceMode IconSourceMode,
-    string LastSourceError);
+    string LastSourceError,
+    int AdvisoryUseCachedCount,
+    int AdvisoryNativePartialCount,
+    int AdvisoryFallbackGridCount,
+    int AdvisoryRecoveryCount);
 
 public sealed class DesktopIntegrationRuntime
 {
@@ -44,6 +48,10 @@ public sealed class DesktopIntegrationRuntime
     private readonly IntegrationDiagnostics _diagnostics;
 
     private DateTimeOffset _lastTickAt = DateTimeOffset.MinValue;
+    private int _advisoryUseCachedCount;
+    private int _advisoryNativePartialCount;
+    private int _advisoryFallbackGridCount;
+    private int _advisoryRecoveryCount;
 
     public DesktopIntegrationRuntime(
         IntegrationScheduler scheduler,
@@ -82,6 +90,7 @@ public sealed class DesktopIntegrationRuntime
 
             _scheduler.MarkSuccess();
             var advisory = ResolveAdvisory(_iconProvider, icons.Count);
+            TrackAdvisory(advisory);
             var msg = $"tick ok: icons={icons.Count}, state={decision.NextState}, advisory={advisory}, bubble={(string.IsNullOrEmpty(bubble) ? "none" : bubble)}";
             _diagnostics.Info("DesktopRuntime", msg);
 
@@ -102,6 +111,7 @@ public sealed class DesktopIntegrationRuntime
             var advisory = _scheduler.IsInRecoveryMode
                 ? RuntimeAdvisory.EnterRecoveryMode
                 : RuntimeAdvisory.None;
+            TrackAdvisory(advisory);
             var msg = $"tick failed: {ex.Message}; pollingHz={_scheduler.PollingHz}; failures={_scheduler.ConsecutiveFailures}; advisory={advisory}";
             _diagnostics.Warn("DesktopRuntime", msg);
 
@@ -128,7 +138,30 @@ public sealed class DesktopIntegrationRuntime
             InfoLogCount: _diagnostics.CountByLevel("Info"),
             WarnLogCount: _diagnostics.CountByLevel("Warn"),
             IconSourceMode: _iconProvider is DesktopIconProvider dip ? dip.LastSourceMode : IconSourceMode.Unknown,
-            LastSourceError: _iconProvider is DesktopIconProvider dep ? dep.LastSourceError : string.Empty);
+            LastSourceError: _iconProvider is DesktopIconProvider dep ? dep.LastSourceError : string.Empty,
+            AdvisoryUseCachedCount: _advisoryUseCachedCount,
+            AdvisoryNativePartialCount: _advisoryNativePartialCount,
+            AdvisoryFallbackGridCount: _advisoryFallbackGridCount,
+            AdvisoryRecoveryCount: _advisoryRecoveryCount);
+    }
+
+    private void TrackAdvisory(RuntimeAdvisory advisory)
+    {
+        switch (advisory)
+        {
+            case RuntimeAdvisory.UseCachedIcons:
+                _advisoryUseCachedCount++;
+                break;
+            case RuntimeAdvisory.NativePartialMapping:
+                _advisoryNativePartialCount++;
+                break;
+            case RuntimeAdvisory.FallbackGridMapping:
+                _advisoryFallbackGridCount++;
+                break;
+            case RuntimeAdvisory.EnterRecoveryMode:
+                _advisoryRecoveryCount++;
+                break;
+        }
     }
 
     private static RuntimeAdvisory ResolveAdvisory(IDesktopIconProvider provider, int iconCount)
