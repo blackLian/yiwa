@@ -13,10 +13,7 @@ namespace Companion.Desktop.Icons;
 /// Strategy:
 /// 1) Discover Explorer desktop ListView handle and item count.
 /// 2) Read visible desktop entries from Desktop folder.
-/// 3) Map entries into a deterministic grid inside the desktop work area.
-///
-/// NOTE: native per-icon ListView pixel coordinates are not wired yet.
-/// This source keeps runtime flow available while exposing health details.
+/// 3) Prefer native ListView item coordinates; fallback to deterministic work-area grid.
 /// </summary>
 public sealed class Win32ExplorerIconSource : IDesktopIconSource, IDesktopIconSourceHealthProvider
 {
@@ -54,14 +51,14 @@ public sealed class Win32ExplorerIconSource : IDesktopIconSource, IDesktopIconSo
                 return false;
             }
 
-            var entries = Directory
+            var names = Directory
                 .GetFileSystemEntries(desktopDir)
                 .Select(Path.GetFileName)
                 .Where(static name => !string.IsNullOrWhiteSpace(name) && !name.Equals("desktop.ini", StringComparison.OrdinalIgnoreCase))
                 .OrderBy(static name => name, StringComparer.OrdinalIgnoreCase)
                 .ToArray();
 
-            if (entries.Length == 0)
+            if (names.Length == 0)
             {
                 _consecutiveFailures = 0;
                 _lastError = string.Empty;
@@ -69,14 +66,25 @@ public sealed class Win32ExplorerIconSource : IDesktopIconSource, IDesktopIconSo
                 return true;
             }
 
-            var workArea = GetDesktopWorkAreaOrDefault();
-            var mapped = MapToRuntimeGrid(entries, workArea);
+            if (TryReadNativeIconPositions(listViewHandle, nativeCount, out var nativePositions))
+            {
+                var mapped = MapWithNativePositions(names, nativePositions);
+                if (mapped.Count > 0)
+                {
+                    icons = mapped;
+                    _consecutiveFailures = 0;
+                    _lastError = "native-position-mapping-active";
+                    return true;
+                }
+            }
 
-            icons = mapped;
+            var workArea = GetDesktopWorkAreaOrDefault();
+            var fallbackMapped = MapToRuntimeGrid(names, workArea);
+            icons = fallbackMapped;
             _consecutiveFailures = 0;
-            _lastError = nativeCount >= 0 && Math.Abs(nativeCount - mapped.Count) > 20
-                ? $"native-count-mismatch:native={nativeCount},mapped={mapped.Count}"
-                : string.Empty;
+            _lastError = nativeCount >= 0 && Math.Abs(nativeCount - fallbackMapped.Count) > 20
+                ? $"native-position-unavailable:fallback-grid;native={nativeCount},mapped={fallbackMapped.Count}"
+                : "native-position-unavailable:fallback-grid";
             return true;
         }
         catch (Exception ex)
@@ -95,6 +103,25 @@ public sealed class Win32ExplorerIconSource : IDesktopIconSource, IDesktopIconSo
             ConsecutiveFailures: _consecutiveFailures,
             LastAttemptAt: _lastAttemptAt,
             LastError: _lastError);
+    }
+
+    private static List<DesktopIconInfo> MapWithNativePositions(IReadOnlyList<string> names, IReadOnlyList<NativePoint> positions)
+    {
+        var count = Math.Min(names.Count, positions.Count);
+        if (count <= 0)
+        {
+            return new List<DesktopIconInfo>();
+        }
+
+        const float iconWidth = 92f;
+        const float iconHeight = 92f;
+        var mapped = new List<DesktopIconInfo>(count);
+        for (var i = 0; i < count; i++)
+        {
+            mapped.Add(new DesktopIconInfo(names[i], positions[i].X, positions[i].Y, iconWidth, iconHeight));
+        }
+
+        return mapped;
     }
 
     private static List<DesktopIconInfo> MapToRuntimeGrid(IReadOnlyList<string> names, Win32Rect workArea)
@@ -120,6 +147,95 @@ public sealed class Win32ExplorerIconSource : IDesktopIconSource, IDesktopIconSo
         }
 
         return mapped;
+    }
+
+    private static bool TryReadNativeIconPositions(IntPtr listViewHandle, int nativeCount, out IReadOnlyList<NativePoint> points)
+    {
+        points = Array.Empty<NativePoint>();
+
+        if (nativeCount <= 0)
+        {
+            return false;
+        }
+
+        var pid = 0u;
+        GetWindowThreadProcessId(listViewHandle, out pid);
+        if (pid == 0)
+        {
+            return false;
+        }
+
+        var process = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE, false, pid);
+        if (process == IntPtr.Zero)
+        {
+            return false;
+        }
+
+        try
+        {
+            var pointSize = Marshal.SizeOf<NativePoint>();
+            var remotePoint = VirtualAllocEx(process, IntPtr.Zero, (uint)pointSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+            if (remotePoint == IntPtr.Zero)
+            {
+                return false;
+            }
+
+            try
+            {
+                var result = new List<NativePoint>(nativeCount);
+                for (var i = 0; i < nativeCount; i++)
+                {
+                    var msgResult = SendMessage(listViewHandle, LVM_GETITEMPOSITION, (IntPtr)i, remotePoint);
+                    if (msgResult == IntPtr.Zero)
+                    {
+                        continue;
+                    }
+
+                    var buffer = new byte[pointSize];
+                    if (!ReadProcessMemory(process, remotePoint, buffer, (nuint)buffer.Length, out _))
+                    {
+                        continue;
+                    }
+
+                    var point = ByteArrayToStructure<NativePoint>(buffer);
+                    if (!ClientToScreen(listViewHandle, ref point))
+                    {
+                        continue;
+                    }
+
+                    result.Add(point);
+                }
+
+                if (result.Count == 0)
+                {
+                    return false;
+                }
+
+                points = result;
+                return true;
+            }
+            finally
+            {
+                _ = VirtualFreeEx(process, remotePoint, 0, MEM_RELEASE);
+            }
+        }
+        finally
+        {
+            _ = CloseHandle(process);
+        }
+    }
+
+    private static T ByteArrayToStructure<T>(byte[] bytes) where T : struct
+    {
+        var handle = GCHandle.Alloc(bytes, GCHandleType.Pinned);
+        try
+        {
+            return Marshal.PtrToStructure<T>(handle.AddrOfPinnedObject());
+        }
+        finally
+        {
+            handle.Free();
+        }
     }
 
     private static Win32Rect GetDesktopWorkAreaOrDefault()
@@ -180,7 +296,26 @@ public sealed class Win32ExplorerIconSource : IDesktopIconSource, IDesktopIconSo
 
     private const int LVM_FIRST = 0x1000;
     private const int LVM_GETITEMCOUNT = LVM_FIRST + 4;
+    private const int LVM_GETITEMPOSITION = LVM_FIRST + 16;
+
     private const uint SPI_GETWORKAREA = 0x0030;
+
+    private const uint MEM_COMMIT = 0x1000;
+    private const uint MEM_RESERVE = 0x2000;
+    private const uint MEM_RELEASE = 0x8000;
+    private const uint PAGE_READWRITE = 0x0004;
+
+    private const uint PROCESS_VM_OPERATION = 0x0008;
+    private const uint PROCESS_VM_READ = 0x0010;
+    private const uint PROCESS_VM_WRITE = 0x0020;
+    private const uint PROCESS_QUERY_INFORMATION = 0x0400;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativePoint
+    {
+        public int X;
+        public int Y;
+    }
 
     [StructLayout(LayoutKind.Sequential)]
     private readonly struct Win32Rect
@@ -216,4 +351,25 @@ public sealed class Win32ExplorerIconSource : IDesktopIconSource, IDesktopIconSo
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool SystemParametersInfo(uint uiAction, uint uiParam, out Win32Rect pvParam, uint fWinIni);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool ClientToScreen(IntPtr hWnd, ref NativePoint lpPoint);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr OpenProcess(uint processAccess, bool inheritHandle, uint processId);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr VirtualAllocEx(IntPtr process, IntPtr address, uint size, uint allocationType, uint protect);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool VirtualFreeEx(IntPtr process, IntPtr address, uint size, uint freeType);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool ReadProcessMemory(IntPtr process, IntPtr baseAddress, [Out] byte[] buffer, nuint size, out nuint bytesRead);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool CloseHandle(IntPtr handle);
 }

@@ -71,6 +71,10 @@ def main() -> None:
             "LVM_GETITEMCOUNT",
             "SystemParametersInfo",
             "SPI_GETWORKAREA",
+            "ClientToScreen",
+            "VirtualAllocEx",
+            "ReadProcessMemory",
+            "LVM_GETITEMPOSITION",
         ],
     )
 
