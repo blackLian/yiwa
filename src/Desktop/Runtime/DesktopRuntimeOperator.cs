@@ -3,6 +3,13 @@ using Companion.Desktop.Diagnostics;
 
 namespace Companion.Desktop.Runtime;
 
+public enum RuntimeStatusLevel
+{
+    Healthy,
+    Degraded,
+    Recovery,
+}
+
 public enum RuntimeUserNotice
 {
     None,
@@ -19,6 +26,8 @@ public sealed record RuntimeUpdateResult(
     string NoticeText,
     bool IsNoticeChanged,
     P3ProgressSnapshot Progress,
+    double ProgressDeltaPercent,
+    RuntimeStatusLevel StatusLevel,
     string RuntimeStatusSummary);
 
 public sealed class DesktopRuntimeOperator
@@ -28,6 +37,7 @@ public sealed class DesktopRuntimeOperator
     private readonly IP3ProgressProbe? _progressProbe;
     private readonly bool _hasAcceptanceScript;
     private RuntimeUserNotice _lastNotice = RuntimeUserNotice.None;
+    private double _lastCompletionPercent = -1d;
 
     public DesktopRuntimeOperator(
         DesktopIntegrationRuntime runtime,
@@ -60,13 +70,36 @@ public sealed class DesktopRuntimeOperator
             iconSourceReady: _progressProbe?.IsIconSourceReady() ?? false,
             hasAcceptanceScript: _hasAcceptanceScript);
 
-        var summary = BuildRuntimeStatusSummary(health, progress);
-        return new RuntimeUpdateResult(tick, health, notice, text, changed, progress, summary);
+        var delta = _lastCompletionPercent < 0d ? 0d : progress.CompletionPercent - _lastCompletionPercent;
+        _lastCompletionPercent = progress.CompletionPercent;
+        var statusLevel = ResolveStatusLevel(health, tick);
+
+        var summary = BuildRuntimeStatusSummary(health, progress, delta, statusLevel);
+        return new RuntimeUpdateResult(tick, health, notice, text, changed, progress, delta, statusLevel, summary);
     }
 
-    private static string BuildRuntimeStatusSummary(RuntimeHealthSnapshot health, P3ProgressSnapshot progress)
+    private static RuntimeStatusLevel ResolveStatusLevel(RuntimeHealthSnapshot health, RuntimeTickResult tick)
     {
-        return $"progress={progress.CompletionPercent:0.0}% ({progress.CompletedIssueCount}/8), source={health.IconSourceMode}, advisories[cached={health.AdvisoryUseCachedCount},partial={health.AdvisoryNativePartialCount},fallback={health.AdvisoryFallbackGridCount},recovery={health.AdvisoryRecoveryCount}]";
+        if (health.IsInRecoveryMode || tick.Advisory == RuntimeAdvisory.EnterRecoveryMode)
+        {
+            return RuntimeStatusLevel.Recovery;
+        }
+
+        if (tick.Advisory is RuntimeAdvisory.UseCachedIcons or RuntimeAdvisory.NativePartialMapping or RuntimeAdvisory.FallbackGridMapping)
+        {
+            return RuntimeStatusLevel.Degraded;
+        }
+
+        return RuntimeStatusLevel.Healthy;
+    }
+
+    private static string BuildRuntimeStatusSummary(
+        RuntimeHealthSnapshot health,
+        P3ProgressSnapshot progress,
+        double delta,
+        RuntimeStatusLevel statusLevel)
+    {
+        return $"status={statusLevel}, progress={progress.CompletionPercent:0.0}% (Δ{delta:+0.0;-0.0;0.0}, {progress.CompletedIssueCount}/8), source={health.IconSourceMode}, advisories[cached={health.AdvisoryUseCachedCount},partial={health.AdvisoryNativePartialCount},fallback={health.AdvisoryFallbackGridCount},recovery={health.AdvisoryRecoveryCount}]";
     }
 
     private static (RuntimeUserNotice, string) ResolveNotice(RuntimeTickResult tick, RuntimeHealthSnapshot health)

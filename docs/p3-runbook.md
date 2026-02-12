@@ -32,7 +32,7 @@
 
 9. 连续两次同类型异常时，`DesktopRuntimeOperator.Update(...)` 应保持 notice 但 `IsNoticeChanged=false`，避免 warning 日志刷屏。
 
-10. 在每次 `DesktopRuntimeOperator.Update(...)` 后读取 `result.Progress.CompletionPercent` 输出当前实现完成度（例如 75.0%），并输出 `result.RuntimeStatusSummary` 作为运行状态摘要。
+10. 在每次 `DesktopRuntimeOperator.Update(...)` 后读取 `result.Progress.CompletionPercent` 输出当前实现完成度（例如 75.0%），并输出 `result.ProgressDeltaPercent`、`result.StatusLevel` 与 `result.RuntimeStatusSummary` 作为运行状态摘要。
 
 11. 通过 `P3ProgressProbe` 注入 `DesktopRuntimeOperator`，确保完成度仅在图标源真实可用后提升，避免因临时缓存造成误判。
 
