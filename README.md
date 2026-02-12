@@ -31,3 +31,7 @@
 - `src/App`：交互编排器。
 - `assets/pets`：可爱猫 / 高冷猫示例配置。
 - `tests`：最小逻辑校验脚本。
+
+## Deployment
+
+- 完整部署方案：`docs/deployment-plan.md`
