@@ -80,6 +80,9 @@ def main() -> None:
             "OrderBy(static i => i.X)",
             "fallbackNames",
             "NormalizeNativeOrder",
+            "current with { Name = candidate }",
+            "used.Contains(candidate)",
+            "HashSet<string>(StringComparer.OrdinalIgnoreCase)",
         ],
     )
 

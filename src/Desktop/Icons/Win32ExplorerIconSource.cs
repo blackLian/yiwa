@@ -49,7 +49,7 @@ public sealed class Win32ExplorerIconSource : IDesktopIconSource, IDesktopIconSo
 
             if (nativeCount > 0 && TryReadNativeIcons(listViewHandle, nativeCount, desktopNames, out var nativeIcons) && nativeIcons.Count > 0)
             {
-                icons = NormalizeNativeOrder(nativeIcons);
+                icons = NormalizeNativeOrder(nativeIcons, desktopNames);
                 _consecutiveFailures = 0;
                 _lastError = "native-position-and-text-mapping-active";
                 return true;
@@ -91,14 +91,41 @@ public sealed class Win32ExplorerIconSource : IDesktopIconSource, IDesktopIconSo
 
 
 
-    private static IReadOnlyList<DesktopIconInfo> NormalizeNativeOrder(IReadOnlyList<DesktopIconInfo> icons)
+    private static IReadOnlyList<DesktopIconInfo> NormalizeNativeOrder(IReadOnlyList<DesktopIconInfo> icons, IReadOnlyList<string> fallbackNames)
     {
         // Explorer desktop uses top-to-bottom fill and then left-to-right columns.
         // Normalizing order improves deterministic behavior traces and collision replay.
-        return icons
+        var ordered = icons
             .OrderBy(static i => i.X)
             .ThenBy(static i => i.Y)
             .ToArray();
+
+        // Some systems return duplicate/blank names from native ListView reads.
+        // Reconcile with Desktop names to keep deterministic and user-friendly bubbles.
+        var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        for (var i = 0; i < ordered.Length; i++)
+        {
+            var current = ordered[i];
+            var candidate = current.Name;
+
+            if (string.IsNullOrWhiteSpace(candidate) || used.Contains(candidate))
+            {
+                candidate = i < fallbackNames.Count ? fallbackNames[i] : $"desktop-item-{i}";
+            }
+
+            if (used.Contains(candidate))
+            {
+                candidate = $"{candidate}-{i}";
+            }
+
+            used.Add(candidate);
+            if (!candidate.Equals(current.Name, StringComparison.Ordinal))
+            {
+                ordered[i] = current with { Name = candidate };
+            }
+        }
+
+        return ordered;
     }
 
     private static IReadOnlyList<string> ReadDesktopNames()
