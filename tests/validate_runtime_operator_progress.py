@@ -86,6 +86,9 @@ def main() -> None:
             "remainingFallbackNames",
             "Queue<string>(fallbackNames)",
             "TakeNextAvailableFallbackName",
+            "fallbackGrid = MapToRuntimeGrid",
+            "native-partial-mapping-active",
+            "MergeNativeWithFallback",
         ],
     )
 

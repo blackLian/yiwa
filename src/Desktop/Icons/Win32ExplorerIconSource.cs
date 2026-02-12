@@ -49,9 +49,12 @@ public sealed class Win32ExplorerIconSource : IDesktopIconSource, IDesktopIconSo
 
             if (nativeCount > 0 && TryReadNativeIcons(listViewHandle, nativeCount, desktopNames, out var nativeIcons) && nativeIcons.Count > 0)
             {
-                icons = NormalizeNativeOrder(nativeIcons, desktopNames);
+                var normalized = NormalizeNativeOrder(nativeIcons, desktopNames);
+                icons = MergeNativeWithFallback(normalized, desktopNames, GetDesktopWorkAreaOrDefault());
                 _consecutiveFailures = 0;
-                _lastError = "native-position-and-text-mapping-active";
+                _lastError = icons.Count < desktopNames.Count
+                    ? $"native-partial-mapping-active:native={nativeIcons.Count},merged={icons.Count},desktop={desktopNames.Count}"
+                    : "native-position-and-text-mapping-active";
                 return true;
             }
 
@@ -147,6 +150,39 @@ public sealed class Win32ExplorerIconSource : IDesktopIconSource, IDesktopIconSo
         }
 
         return string.Empty;
+    }
+
+    private static IReadOnlyList<DesktopIconInfo> MergeNativeWithFallback(
+        IReadOnlyList<DesktopIconInfo> nativeIcons,
+        IReadOnlyList<string> desktopNames,
+        Win32Rect workArea)
+    {
+        if (desktopNames.Count == 0)
+        {
+            return nativeIcons;
+        }
+
+        var merged = new List<DesktopIconInfo>(nativeIcons.Count + desktopNames.Count);
+        merged.AddRange(nativeIcons);
+
+        var usedNames = new HashSet<string>(
+            nativeIcons.Select(static i => i.Name),
+            StringComparer.OrdinalIgnoreCase);
+
+        var fallbackGrid = MapToRuntimeGrid(desktopNames, workArea);
+        for (var i = 0; i < fallbackGrid.Count; i++)
+        {
+            var fallbackIcon = fallbackGrid[i];
+            if (usedNames.Contains(fallbackIcon.Name))
+            {
+                continue;
+            }
+
+            usedNames.Add(fallbackIcon.Name);
+            merged.Add(fallbackIcon);
+        }
+
+        return merged;
     }
 
     private static IReadOnlyList<string> ReadDesktopNames()
