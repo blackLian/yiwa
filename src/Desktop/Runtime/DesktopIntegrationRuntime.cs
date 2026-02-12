@@ -11,6 +11,7 @@ public enum RuntimeAdvisory
     None,
     UseCachedIcons,
     EnterRecoveryMode,
+    NativePartialMapping,
 }
 
 public sealed record RuntimeTickResult(
@@ -77,7 +78,7 @@ public sealed class DesktopIntegrationRuntime
             var (decision, bubble) = _orchestrator.OnPetMovedNearIcons(petPosition, icons);
 
             _scheduler.MarkSuccess();
-            var advisory = ResolveAdvisory(icons.Count);
+            var advisory = ResolveAdvisory(_iconProvider, icons.Count);
             var msg = $"tick ok: icons={icons.Count}, state={decision.NextState}, advisory={advisory}, bubble={(string.IsNullOrEmpty(bubble) ? "none" : bubble)}";
             _diagnostics.Info("DesktopRuntime", msg);
 
@@ -125,8 +126,14 @@ public sealed class DesktopIntegrationRuntime
             WarnLogCount: _diagnostics.CountByLevel("Warn"));
     }
 
-    private static RuntimeAdvisory ResolveAdvisory(int iconCount)
+    private static RuntimeAdvisory ResolveAdvisory(IDesktopIconProvider provider, int iconCount)
     {
+        if (provider is DesktopIconProvider desktopProvider &&
+            desktopProvider.LastSourceError.Contains("native-partial-mapping-active", StringComparison.OrdinalIgnoreCase))
+        {
+            return RuntimeAdvisory.NativePartialMapping;
+        }
+
         if (iconCount == 0)
         {
             return RuntimeAdvisory.UseCachedIcons;

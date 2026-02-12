@@ -30,6 +30,7 @@ public sealed class DesktopIconProvider : IDesktopIconProvider
     public int CachedCount => _cached.Count;
     public int SourceFailureCount { get; private set; }
     public int ConsecutiveSourceFailures { get; private set; }
+    public string LastSourceError { get; private set; } = string.Empty;
 
     public IReadOnlyList<DesktopIconInfo> GetVisibleIcons()
     {
@@ -39,7 +40,16 @@ public sealed class DesktopIconProvider : IDesktopIconProvider
             _cached.AddRange(icons);
             LastRefreshSucceeded = true;
             ConsecutiveSourceFailures = 0;
-            _diagnostics.Info("DesktopIconProvider", $"icon source refreshed: count={_cached.Count}");
+            if (_iconSource is IDesktopIconSourceHealthProvider sourceHealth)
+            {
+                LastSourceError = sourceHealth.GetHealth().LastError;
+            }
+            else
+            {
+                LastSourceError = string.Empty;
+            }
+
+            _diagnostics.Info("DesktopIconProvider", $"icon source refreshed: count={_cached.Count}; lastError={LastSourceError}");
             return _cached;
         }
 
@@ -51,6 +61,7 @@ public sealed class DesktopIconProvider : IDesktopIconProvider
         if (_iconSource is IDesktopIconSourceHealthProvider healthProvider)
         {
             var health = healthProvider.GetHealth();
+            LastSourceError = health.LastError;
             healthText = $"; sourceReady={health.IsReady}; sourceFailures={health.ConsecutiveFailures}; lastError={health.LastError}";
         }
 
@@ -65,6 +76,7 @@ public sealed class DesktopIconProvider : IDesktopIconProvider
         _cached.Clear();
         _cached.AddRange(icons);
         LastRefreshSucceeded = false;
+        LastSourceError = "manual-cache-injected";
         _diagnostics.Info("DesktopIconProvider", $"cached icons injected: count={_cached.Count}");
     }
 }

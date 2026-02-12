@@ -19,6 +19,8 @@ def main() -> None:
             "public RuntimeHealthSnapshot GetHealthSnapshot()",
             "RuntimeAdvisory.UseCachedIcons",
             "RuntimeAdvisory.EnterRecoveryMode",
+            "ResolveAdvisory(IDesktopIconProvider provider, int iconCount)",
+            "RuntimeAdvisory.NativePartialMapping",
         ],
     )
 

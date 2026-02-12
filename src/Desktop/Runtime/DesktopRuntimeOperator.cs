@@ -8,6 +8,7 @@ public enum RuntimeUserNotice
     None,
     IconInteractionUnavailable,
     RuntimeRecoveryMode,
+    IconInteractionPartial,
 }
 
 public sealed record RuntimeUpdateResult(
@@ -70,6 +71,11 @@ public sealed class DesktopRuntimeOperator
         if (tick.Advisory == RuntimeAdvisory.UseCachedIcons)
         {
             return (RuntimeUserNotice.IconInteractionUnavailable, "图标交互暂不可用，正在使用缓存/降级模式。");
+        }
+
+        if (tick.Advisory == RuntimeAdvisory.NativePartialMapping)
+        {
+            return (RuntimeUserNotice.IconInteractionPartial, "图标交互部分可用：native 数据不完整，已自动补全回退网格。");
         }
 
         return (RuntimeUserNotice.None, string.Empty);

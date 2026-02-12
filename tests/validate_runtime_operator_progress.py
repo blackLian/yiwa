@@ -19,6 +19,8 @@ def main() -> None:
             "private readonly IP3ProgressProbe? _progressProbe;",
             "iconSourceReady: _progressProbe?.IsIconSourceReady() ?? false",
             "if (notice != RuntimeUserNotice.None && changed)",
+            "RuntimeAdvisory.NativePartialMapping",
+            "IconInteractionPartial",
         ],
     )
 
@@ -105,6 +107,7 @@ def main() -> None:
         [
             "public int SourceFailureCount",
             "public int ConsecutiveSourceFailures",
+            "public string LastSourceError",
             "ConsecutiveSourceFailures = 0;",
             "ConsecutiveSourceFailures++;",
             "IDesktopIconSourceHealthProvider",

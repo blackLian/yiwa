@@ -12,7 +12,7 @@
 - [x] ISSUE-07：已加入集成诊断日志、运行时 advisory 输出、非阻塞用户提示与提示去重日志策略。
 - [x] ISSUE-08：已提供可执行的 P3 smoke 脚本（串行执行 4 项校验并汇总失败）。
 
-当前代码内可通过 `P3ProgressEstimator` 输出完成度百分比，完成度通过 probe 绑定真实能力状态。
+当前代码内可通过 `P3ProgressEstimator` 输出完成度百分比，完成度通过 probe 绑定真实能力状态；运行时已可区分 `UseCachedIcons` 与 `NativePartialMapping`。
 
 ## 看板建议
 
