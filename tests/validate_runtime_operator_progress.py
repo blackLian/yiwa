@@ -77,6 +77,9 @@ def main() -> None:
             "LVM_GETITEMPOSITION",
             "LVM_GETITEMTEXTW",
             "WriteProcessMemory",
+            "OrderBy(static i => i.X)",
+            "fallbackNames",
+            "NormalizeNativeOrder",
         ],
     )
 

@@ -14,7 +14,8 @@ namespace Companion.Desktop.Icons;
 /// Strategy:
 /// 1) Discover Explorer desktop ListView handle and item count.
 /// 2) Prefer native ListView item text + coordinates.
-/// 3) Fallback to deterministic work-area grid when native read is unavailable.
+/// 3) Native results are normalized by desktop layout order (top-to-bottom, left-to-right).
+/// 4) Fallback to deterministic work-area grid when native read is unavailable.
 /// </summary>
 public sealed class Win32ExplorerIconSource : IDesktopIconSource, IDesktopIconSourceHealthProvider
 {
@@ -44,15 +45,16 @@ public sealed class Win32ExplorerIconSource : IDesktopIconSource, IDesktopIconSo
 
             _listViewDetected = true;
             var nativeCount = SendMessage(listViewHandle, LVM_GETITEMCOUNT, IntPtr.Zero, IntPtr.Zero).ToInt32();
-            if (nativeCount > 0 && TryReadNativeIcons(listViewHandle, nativeCount, out var nativeIcons) && nativeIcons.Count > 0)
+            var desktopNames = ReadDesktopNames();
+
+            if (nativeCount > 0 && TryReadNativeIcons(listViewHandle, nativeCount, desktopNames, out var nativeIcons) && nativeIcons.Count > 0)
             {
-                icons = nativeIcons;
+                icons = NormalizeNativeOrder(nativeIcons);
                 _consecutiveFailures = 0;
                 _lastError = "native-position-and-text-mapping-active";
                 return true;
             }
 
-            var desktopNames = ReadDesktopNames();
             if (desktopNames.Count == 0)
             {
                 icons = Array.Empty<DesktopIconInfo>();
@@ -87,6 +89,18 @@ public sealed class Win32ExplorerIconSource : IDesktopIconSource, IDesktopIconSo
             LastError: _lastError);
     }
 
+
+
+    private static IReadOnlyList<DesktopIconInfo> NormalizeNativeOrder(IReadOnlyList<DesktopIconInfo> icons)
+    {
+        // Explorer desktop uses top-to-bottom fill and then left-to-right columns.
+        // Normalizing order improves deterministic behavior traces and collision replay.
+        return icons
+            .OrderBy(static i => i.X)
+            .ThenBy(static i => i.Y)
+            .ToArray();
+    }
+
     private static IReadOnlyList<string> ReadDesktopNames()
     {
         var desktopDir = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
@@ -103,7 +117,7 @@ public sealed class Win32ExplorerIconSource : IDesktopIconSource, IDesktopIconSo
             .ToArray();
     }
 
-    private static bool TryReadNativeIcons(IntPtr listViewHandle, int nativeCount, out IReadOnlyList<DesktopIconInfo> icons)
+    private static bool TryReadNativeIcons(IntPtr listViewHandle, int nativeCount, IReadOnlyList<string> fallbackNames, out IReadOnlyList<DesktopIconInfo> icons)
     {
         icons = Array.Empty<DesktopIconInfo>();
 
@@ -145,7 +159,7 @@ public sealed class Win32ExplorerIconSource : IDesktopIconSource, IDesktopIconSo
                     var name = TryReadNativeText(listViewHandle, process, itemPtr, textPtr, i);
                     if (string.IsNullOrWhiteSpace(name))
                     {
-                        name = $"desktop-item-{i}";
+                        name = i < fallbackNames.Count ? fallbackNames[i] : $"desktop-item-{i}";
                     }
 
                     const float iconWidth = 92f;
