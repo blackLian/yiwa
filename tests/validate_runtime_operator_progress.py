@@ -69,6 +69,8 @@ def main() -> None:
             "Environment.SpecialFolder.DesktopDirectory",
             "FindWindowEx",
             "LVM_GETITEMCOUNT",
+            "SystemParametersInfo",
+            "SPI_GETWORKAREA",
         ],
     )
 

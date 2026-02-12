@@ -38,6 +38,6 @@
 
 12. 若图标源波动，使用 `RetryingDesktopIconSource` 并检查 `DesktopIconSourceHealth`（失败次数/最后错误）以辅助排障。
 
-13. 默认接线可通过 `DesktopIconProviderFactory.CreateDefault(...)` 创建（Win32ExplorerIconSource + RetryingDesktopIconSource），当前 Win32 source 会先发现 Explorer ListView 并读取 item count，再基于 Desktop 目录项生成网格坐标。
+13. 默认接线可通过 `DesktopIconProviderFactory.CreateDefault(...)` 创建（Win32ExplorerIconSource + RetryingDesktopIconSource），当前 Win32 source 会先发现 Explorer ListView 并读取 item count，再按 SPI_GETWORKAREA 对 Desktop 目录项进行排序后网格映射。
 14. 执行 `pwsh ./tests/p3_smoke_test.ps1`，确认四项验证脚本串行通过并输出 `Summary: all checks passed`。
 

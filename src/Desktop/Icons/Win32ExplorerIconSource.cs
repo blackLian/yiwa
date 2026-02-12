@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using RuntimeInformation = System.Runtime.InteropServices.RuntimeInformation;
 
@@ -10,12 +11,12 @@ namespace Companion.Desktop.Icons;
 /// Windows icon source for P3.
 ///
 /// Strategy:
-/// 1) Try discovering Explorer desktop ListView handle and item count.
+/// 1) Discover Explorer desktop ListView handle and item count.
 /// 2) Read visible desktop entries from Desktop folder.
-/// 3) Map entries into a deterministic layout for current runtime collision simulation.
+/// 3) Map entries into a deterministic grid inside the desktop work area.
 ///
-/// NOTE: native per-icon ListView pixel coordinates are not wired yet. This source keeps
-/// runtime flow available while exposing health details so progress tracking can remain honest.
+/// NOTE: native per-icon ListView pixel coordinates are not wired yet.
+/// This source keeps runtime flow available while exposing health details.
 /// </summary>
 public sealed class Win32ExplorerIconSource : IDesktopIconSource, IDesktopIconSourceHealthProvider
 {
@@ -53,14 +54,29 @@ public sealed class Win32ExplorerIconSource : IDesktopIconSource, IDesktopIconSo
                 return false;
             }
 
-            var entries = Directory.GetFileSystemEntries(desktopDir);
-            var mapped = MapToRuntimeGrid(entries, nativeCount);
+            var entries = Directory
+                .GetFileSystemEntries(desktopDir)
+                .Select(Path.GetFileName)
+                .Where(static name => !string.IsNullOrWhiteSpace(name) && !name.Equals("desktop.ini", StringComparison.OrdinalIgnoreCase))
+                .OrderBy(static name => name, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+            if (entries.Length == 0)
+            {
+                _consecutiveFailures = 0;
+                _lastError = string.Empty;
+                icons = Array.Empty<DesktopIconInfo>();
+                return true;
+            }
+
+            var workArea = GetDesktopWorkAreaOrDefault();
+            var mapped = MapToRuntimeGrid(entries, workArea);
 
             icons = mapped;
             _consecutiveFailures = 0;
-            _lastError = nativeCount >= 0
-                ? "native-listview-detected:grid-mapping-active"
-                : "native-listview-unavailable:grid-mapping-active";
+            _lastError = nativeCount >= 0 && Math.Abs(nativeCount - mapped.Count) > 20
+                ? $"native-count-mismatch:native={nativeCount},mapped={mapped.Count}"
+                : string.Empty;
             return true;
         }
         catch (Exception ex)
@@ -81,35 +97,39 @@ public sealed class Win32ExplorerIconSource : IDesktopIconSource, IDesktopIconSo
             LastError: _lastError);
     }
 
-    private static List<DesktopIconInfo> MapToRuntimeGrid(string[] entries, int nativeCount)
+    private static List<DesktopIconInfo> MapToRuntimeGrid(IReadOnlyList<string> names, Win32Rect workArea)
     {
-        var mapped = new List<DesktopIconInfo>(entries.Length);
+        var mapped = new List<DesktopIconInfo>(names.Count);
 
-        const float originX = 28f;
-        const float originY = 28f;
         const float iconWidth = 92f;
         const float iconHeight = 92f;
         const float rowGap = 16f;
-        const int fallbackRows = 11;
 
-        var rows = nativeCount > 0 ? Math.Clamp(nativeCount, 6, 18) : fallbackRows;
+        var startX = Math.Max(workArea.Left + 16f, 12f);
+        var startY = Math.Max(workArea.Top + 16f, 12f);
+        var usableHeight = Math.Max(workArea.Height - 24f, iconHeight + rowGap);
+        var rows = Math.Max(1, (int)(usableHeight / (iconHeight + rowGap)));
 
-        for (var i = 0; i < entries.Length; i++)
+        for (var i = 0; i < names.Count; i++)
         {
-            var name = Path.GetFileName(entries[i]);
-            if (string.IsNullOrWhiteSpace(name))
-            {
-                continue;
-            }
-
             var col = i / rows;
             var row = i % rows;
-            var x = originX + col * iconWidth;
-            var y = originY + row * (iconHeight + rowGap);
-            mapped.Add(new DesktopIconInfo(name, x, y, iconWidth, iconHeight));
+            var x = startX + col * iconWidth;
+            var y = startY + row * (iconHeight + rowGap);
+            mapped.Add(new DesktopIconInfo(names[i], x, y, iconWidth, iconHeight));
         }
 
         return mapped;
+    }
+
+    private static Win32Rect GetDesktopWorkAreaOrDefault()
+    {
+        if (SystemParametersInfo(SPI_GETWORKAREA, 0, out var rect, 0))
+        {
+            return rect;
+        }
+
+        return new Win32Rect(0, 0, 1920, 1080);
     }
 
     private static bool TryGetDesktopListView(out IntPtr listViewHandle)
@@ -160,6 +180,26 @@ public sealed class Win32ExplorerIconSource : IDesktopIconSource, IDesktopIconSo
 
     private const int LVM_FIRST = 0x1000;
     private const int LVM_GETITEMCOUNT = LVM_FIRST + 4;
+    private const uint SPI_GETWORKAREA = 0x0030;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private readonly struct Win32Rect
+    {
+        public Win32Rect(int left, int top, int right, int bottom)
+        {
+            Left = left;
+            Top = top;
+            Right = right;
+            Bottom = bottom;
+        }
+
+        public int Left { get; }
+        public int Top { get; }
+        public int Right { get; }
+        public int Bottom { get; }
+        public int Width => Right - Left;
+        public int Height => Bottom - Top;
+    }
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern IntPtr FindWindow(string? lpClassName, string? lpWindowName);
@@ -173,4 +213,7 @@ public sealed class Win32ExplorerIconSource : IDesktopIconSource, IDesktopIconSo
 
     [DllImport("user32.dll", CharSet = CharSet.Auto)]
     private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool SystemParametersInfo(uint uiAction, uint uiParam, out Win32Rect pvParam, uint fWinIni);
 }
