@@ -75,6 +75,8 @@ def main() -> None:
             "VirtualAllocEx",
             "ReadProcessMemory",
             "LVM_GETITEMPOSITION",
+            "LVM_GETITEMTEXTW",
+            "WriteProcessMemory",
         ],
     )
 

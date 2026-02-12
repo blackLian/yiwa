@@ -38,6 +38,6 @@
 
 12. 若图标源波动，使用 `RetryingDesktopIconSource` 并检查 `DesktopIconSourceHealth`（失败次数/最后错误）以辅助排障。
 
-13. 默认接线可通过 `DesktopIconProviderFactory.CreateDefault(...)` 创建（Win32ExplorerIconSource + RetryingDesktopIconSource），当前 Win32 source 会先尝试读取 Explorer ListView per-icon 原生坐标（LVM_GETITEMPOSITION + ReadProcessMemory）；失败时回退为 SPI_GETWORKAREA 网格映射。
+13. 默认接线可通过 `DesktopIconProviderFactory.CreateDefault(...)` 创建（Win32ExplorerIconSource + RetryingDesktopIconSource），当前 Win32 source 会先尝试读取 Explorer ListView per-icon 原生坐标与名称（LVM_GETITEMPOSITION/LVM_GETITEMTEXTW + ReadProcessMemory）；失败时回退为 SPI_GETWORKAREA 网格映射。
 14. 执行 `pwsh ./tests/p3_smoke_test.ps1`，确认四项验证脚本串行通过并输出 `Summary: all checks passed`。
 

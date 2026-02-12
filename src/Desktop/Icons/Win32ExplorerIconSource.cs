@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Text;
 using RuntimeInformation = System.Runtime.InteropServices.RuntimeInformation;
 
 namespace Companion.Desktop.Icons;
@@ -12,8 +13,8 @@ namespace Companion.Desktop.Icons;
 ///
 /// Strategy:
 /// 1) Discover Explorer desktop ListView handle and item count.
-/// 2) Read visible desktop entries from Desktop folder.
-/// 3) Prefer native ListView item coordinates; fallback to deterministic work-area grid.
+/// 2) Prefer native ListView item text + coordinates.
+/// 3) Fallback to deterministic work-area grid when native read is unavailable.
 /// </summary>
 public sealed class Win32ExplorerIconSource : IDesktopIconSource, IDesktopIconSourceHealthProvider
 {
@@ -43,48 +44,29 @@ public sealed class Win32ExplorerIconSource : IDesktopIconSource, IDesktopIconSo
 
             _listViewDetected = true;
             var nativeCount = SendMessage(listViewHandle, LVM_GETITEMCOUNT, IntPtr.Zero, IntPtr.Zero).ToInt32();
-
-            var desktopDir = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
-            if (string.IsNullOrWhiteSpace(desktopDir) || !Directory.Exists(desktopDir))
+            if (nativeCount > 0 && TryReadNativeIcons(listViewHandle, nativeCount, out var nativeIcons) && nativeIcons.Count > 0)
             {
-                MarkFailure("desktop directory unavailable");
-                return false;
-            }
-
-            var names = Directory
-                .GetFileSystemEntries(desktopDir)
-                .Select(Path.GetFileName)
-                .Where(static name => !string.IsNullOrWhiteSpace(name) && !name.Equals("desktop.ini", StringComparison.OrdinalIgnoreCase))
-                .OrderBy(static name => name, StringComparer.OrdinalIgnoreCase)
-                .ToArray();
-
-            if (names.Length == 0)
-            {
+                icons = nativeIcons;
                 _consecutiveFailures = 0;
-                _lastError = string.Empty;
-                icons = Array.Empty<DesktopIconInfo>();
+                _lastError = "native-position-and-text-mapping-active";
                 return true;
             }
 
-            if (TryReadNativeIconPositions(listViewHandle, nativeCount, out var nativePositions))
+            var desktopNames = ReadDesktopNames();
+            if (desktopNames.Count == 0)
             {
-                var mapped = MapWithNativePositions(names, nativePositions);
-                if (mapped.Count > 0)
-                {
-                    icons = mapped;
-                    _consecutiveFailures = 0;
-                    _lastError = "native-position-mapping-active";
-                    return true;
-                }
+                icons = Array.Empty<DesktopIconInfo>();
+                _consecutiveFailures = 0;
+                _lastError = string.Empty;
+                return true;
             }
 
             var workArea = GetDesktopWorkAreaOrDefault();
-            var fallbackMapped = MapToRuntimeGrid(names, workArea);
-            icons = fallbackMapped;
+            icons = MapToRuntimeGrid(desktopNames, workArea);
             _consecutiveFailures = 0;
-            _lastError = nativeCount >= 0 && Math.Abs(nativeCount - fallbackMapped.Count) > 20
-                ? $"native-position-unavailable:fallback-grid;native={nativeCount},mapped={fallbackMapped.Count}"
-                : "native-position-unavailable:fallback-grid";
+            _lastError = nativeCount > 0
+                ? $"native-read-unavailable:fallback-grid;native={nativeCount},mapped={desktopNames.Count}"
+                : "native-read-unavailable:fallback-grid";
             return true;
         }
         catch (Exception ex)
@@ -105,23 +87,146 @@ public sealed class Win32ExplorerIconSource : IDesktopIconSource, IDesktopIconSo
             LastError: _lastError);
     }
 
-    private static List<DesktopIconInfo> MapWithNativePositions(IReadOnlyList<string> names, IReadOnlyList<NativePoint> positions)
+    private static IReadOnlyList<string> ReadDesktopNames()
     {
-        var count = Math.Min(names.Count, positions.Count);
-        if (count <= 0)
+        var desktopDir = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+        if (string.IsNullOrWhiteSpace(desktopDir) || !Directory.Exists(desktopDir))
         {
-            return new List<DesktopIconInfo>();
+            return Array.Empty<string>();
         }
 
-        const float iconWidth = 92f;
-        const float iconHeight = 92f;
-        var mapped = new List<DesktopIconInfo>(count);
-        for (var i = 0; i < count; i++)
+        return Directory
+            .GetFileSystemEntries(desktopDir)
+            .Select(Path.GetFileName)
+            .Where(static name => !string.IsNullOrWhiteSpace(name) && !name.Equals("desktop.ini", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(static name => name, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static bool TryReadNativeIcons(IntPtr listViewHandle, int nativeCount, out IReadOnlyList<DesktopIconInfo> icons)
+    {
+        icons = Array.Empty<DesktopIconInfo>();
+
+        GetWindowThreadProcessId(listViewHandle, out var processId);
+        if (processId == 0)
         {
-            mapped.Add(new DesktopIconInfo(names[i], positions[i].X, positions[i].Y, iconWidth, iconHeight));
+            return false;
         }
 
-        return mapped;
+        var process = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE, false, processId);
+        if (process == IntPtr.Zero)
+        {
+            return false;
+        }
+
+        try
+        {
+            var pointSize = Marshal.SizeOf<NativePoint>();
+            var lvItemSize = Marshal.SizeOf<NativeLvItem>();
+            var pointPtr = VirtualAllocEx(process, IntPtr.Zero, (uint)pointSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+            var textPtr = VirtualAllocEx(process, IntPtr.Zero, TextBufferBytes, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+            var itemPtr = VirtualAllocEx(process, IntPtr.Zero, (uint)lvItemSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+
+            if (pointPtr == IntPtr.Zero || textPtr == IntPtr.Zero || itemPtr == IntPtr.Zero)
+            {
+                return false;
+            }
+
+            try
+            {
+                var result = new List<DesktopIconInfo>(nativeCount);
+                for (var i = 0; i < nativeCount; i++)
+                {
+                    if (!TryReadNativePoint(listViewHandle, process, pointPtr, i, out var point))
+                    {
+                        continue;
+                    }
+
+                    var name = TryReadNativeText(listViewHandle, process, itemPtr, textPtr, i);
+                    if (string.IsNullOrWhiteSpace(name))
+                    {
+                        name = $"desktop-item-{i}";
+                    }
+
+                    const float iconWidth = 92f;
+                    const float iconHeight = 92f;
+                    result.Add(new DesktopIconInfo(name, point.X, point.Y, iconWidth, iconHeight));
+                }
+
+                if (result.Count == 0)
+                {
+                    return false;
+                }
+
+                icons = result;
+                return true;
+            }
+            finally
+            {
+                _ = VirtualFreeEx(process, pointPtr, 0, MEM_RELEASE);
+                _ = VirtualFreeEx(process, textPtr, 0, MEM_RELEASE);
+                _ = VirtualFreeEx(process, itemPtr, 0, MEM_RELEASE);
+            }
+        }
+        finally
+        {
+            _ = CloseHandle(process);
+        }
+    }
+
+    private static bool TryReadNativePoint(IntPtr listViewHandle, IntPtr process, IntPtr remotePoint, int index, out NativePoint point)
+    {
+        point = default;
+
+        var msgResult = SendMessage(listViewHandle, LVM_GETITEMPOSITION, (IntPtr)index, remotePoint);
+        if (msgResult == IntPtr.Zero)
+        {
+            return false;
+        }
+
+        var pointBuffer = new byte[Marshal.SizeOf<NativePoint>()];
+        if (!ReadProcessMemory(process, remotePoint, pointBuffer, (nuint)pointBuffer.Length, out _))
+        {
+            return false;
+        }
+
+        point = ByteArrayToStructure<NativePoint>(pointBuffer);
+        return ClientToScreen(listViewHandle, ref point);
+    }
+
+    private static string TryReadNativeText(IntPtr listViewHandle, IntPtr process, IntPtr remoteLvItem, IntPtr remoteText, int index)
+    {
+        var local = new NativeLvItem
+        {
+            mask = LVIF_TEXT,
+            iItem = index,
+            iSubItem = 0,
+            cchTextMax = MaxTextChars,
+            pszText = remoteText,
+        };
+
+        var localBytes = StructureToByteArray(local);
+        if (!WriteProcessMemory(process, remoteLvItem, localBytes, (nuint)localBytes.Length, out _))
+        {
+            return string.Empty;
+        }
+
+        _ = SendMessage(listViewHandle, LVM_GETITEMTEXTW, (IntPtr)index, remoteLvItem);
+
+        var textBytes = new byte[TextBufferBytes];
+        if (!ReadProcessMemory(process, remoteText, textBytes, (nuint)textBytes.Length, out _))
+        {
+            return string.Empty;
+        }
+
+        var text = Encoding.Unicode.GetString(textBytes);
+        var nullIdx = text.IndexOf('\0');
+        if (nullIdx >= 0)
+        {
+            text = text[..nullIdx];
+        }
+
+        return text.Trim();
     }
 
     private static List<DesktopIconInfo> MapToRuntimeGrid(IReadOnlyList<string> names, Win32Rect workArea)
@@ -149,79 +254,19 @@ public sealed class Win32ExplorerIconSource : IDesktopIconSource, IDesktopIconSo
         return mapped;
     }
 
-    private static bool TryReadNativeIconPositions(IntPtr listViewHandle, int nativeCount, out IReadOnlyList<NativePoint> points)
+    private static byte[] StructureToByteArray<T>(T value) where T : struct
     {
-        points = Array.Empty<NativePoint>();
-
-        if (nativeCount <= 0)
-        {
-            return false;
-        }
-
-        var pid = 0u;
-        GetWindowThreadProcessId(listViewHandle, out pid);
-        if (pid == 0)
-        {
-            return false;
-        }
-
-        var process = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE, false, pid);
-        if (process == IntPtr.Zero)
-        {
-            return false;
-        }
-
+        var size = Marshal.SizeOf<T>();
+        var bytes = new byte[size];
+        var handle = GCHandle.Alloc(bytes, GCHandleType.Pinned);
         try
         {
-            var pointSize = Marshal.SizeOf<NativePoint>();
-            var remotePoint = VirtualAllocEx(process, IntPtr.Zero, (uint)pointSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-            if (remotePoint == IntPtr.Zero)
-            {
-                return false;
-            }
-
-            try
-            {
-                var result = new List<NativePoint>(nativeCount);
-                for (var i = 0; i < nativeCount; i++)
-                {
-                    var msgResult = SendMessage(listViewHandle, LVM_GETITEMPOSITION, (IntPtr)i, remotePoint);
-                    if (msgResult == IntPtr.Zero)
-                    {
-                        continue;
-                    }
-
-                    var buffer = new byte[pointSize];
-                    if (!ReadProcessMemory(process, remotePoint, buffer, (nuint)buffer.Length, out _))
-                    {
-                        continue;
-                    }
-
-                    var point = ByteArrayToStructure<NativePoint>(buffer);
-                    if (!ClientToScreen(listViewHandle, ref point))
-                    {
-                        continue;
-                    }
-
-                    result.Add(point);
-                }
-
-                if (result.Count == 0)
-                {
-                    return false;
-                }
-
-                points = result;
-                return true;
-            }
-            finally
-            {
-                _ = VirtualFreeEx(process, remotePoint, 0, MEM_RELEASE);
-            }
+            Marshal.StructureToPtr(value, handle.AddrOfPinnedObject(), false);
+            return bytes;
         }
         finally
         {
-            _ = CloseHandle(process);
+            handle.Free();
         }
     }
 
@@ -297,6 +342,11 @@ public sealed class Win32ExplorerIconSource : IDesktopIconSource, IDesktopIconSo
     private const int LVM_FIRST = 0x1000;
     private const int LVM_GETITEMCOUNT = LVM_FIRST + 4;
     private const int LVM_GETITEMPOSITION = LVM_FIRST + 16;
+    private const int LVM_GETITEMTEXTW = LVM_FIRST + 115;
+
+    private const int LVIF_TEXT = 0x0001;
+    private const int MaxTextChars = 260;
+    private const uint TextBufferBytes = MaxTextChars * 2u;
 
     private const uint SPI_GETWORKAREA = 0x0030;
 
@@ -315,6 +365,26 @@ public sealed class Win32ExplorerIconSource : IDesktopIconSource, IDesktopIconSo
     {
         public int X;
         public int Y;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeLvItem
+    {
+        public uint mask;
+        public int iItem;
+        public int iSubItem;
+        public uint state;
+        public uint stateMask;
+        public IntPtr pszText;
+        public int cchTextMax;
+        public int iImage;
+        public IntPtr lParam;
+        public int iIndent;
+        public int iGroupId;
+        public uint cColumns;
+        public IntPtr puColumns;
+        public IntPtr piColFmt;
+        public int iGroup;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -369,6 +439,9 @@ public sealed class Win32ExplorerIconSource : IDesktopIconSource, IDesktopIconSo
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool ReadProcessMemory(IntPtr process, IntPtr baseAddress, [Out] byte[] buffer, nuint size, out nuint bytesRead);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool WriteProcessMemory(IntPtr process, IntPtr baseAddress, byte[] buffer, nuint size, out nuint bytesWritten);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool CloseHandle(IntPtr handle);
