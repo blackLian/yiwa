@@ -14,6 +14,15 @@ public interface IDesktopIconSource
     bool TryGetVisibleIcons(out IReadOnlyList<DesktopIconInfo> icons);
 }
 
+public enum IconSourceMode
+{
+    Unknown,
+    NativeComplete,
+    NativePartial,
+    FallbackGrid,
+    CachedOnly,
+}
+
 public sealed class DesktopIconProvider : IDesktopIconProvider
 {
     private readonly IntegrationDiagnostics _diagnostics;
@@ -31,6 +40,7 @@ public sealed class DesktopIconProvider : IDesktopIconProvider
     public int SourceFailureCount { get; private set; }
     public int ConsecutiveSourceFailures { get; private set; }
     public string LastSourceError { get; private set; } = string.Empty;
+    public IconSourceMode LastSourceMode { get; private set; } = IconSourceMode.Unknown;
 
     public IReadOnlyList<DesktopIconInfo> GetVisibleIcons()
     {
@@ -40,6 +50,7 @@ public sealed class DesktopIconProvider : IDesktopIconProvider
             _cached.AddRange(icons);
             LastRefreshSucceeded = true;
             ConsecutiveSourceFailures = 0;
+
             if (_iconSource is IDesktopIconSourceHealthProvider sourceHealth)
             {
                 LastSourceError = sourceHealth.GetHealth().LastError;
@@ -49,7 +60,8 @@ public sealed class DesktopIconProvider : IDesktopIconProvider
                 LastSourceError = string.Empty;
             }
 
-            _diagnostics.Info("DesktopIconProvider", $"icon source refreshed: count={_cached.Count}; lastError={LastSourceError}");
+            LastSourceMode = ResolveSourceMode(LastSourceError, _cached.Count);
+            _diagnostics.Info("DesktopIconProvider", $"icon source refreshed: count={_cached.Count}; mode={LastSourceMode}; lastError={LastSourceError}");
             return _cached;
         }
 
@@ -65,6 +77,7 @@ public sealed class DesktopIconProvider : IDesktopIconProvider
             healthText = $"; sourceReady={health.IsReady}; sourceFailures={health.ConsecutiveFailures}; lastError={health.LastError}";
         }
 
+        LastSourceMode = IconSourceMode.CachedOnly;
         _diagnostics.Warn(
             "DesktopIconProvider",
             $"icon source unavailable, using cached icons; cached={_cached.Count}; failures={ConsecutiveSourceFailures}{healthText}");
@@ -77,7 +90,33 @@ public sealed class DesktopIconProvider : IDesktopIconProvider
         _cached.AddRange(icons);
         LastRefreshSucceeded = false;
         LastSourceError = "manual-cache-injected";
+        LastSourceMode = IconSourceMode.CachedOnly;
         _diagnostics.Info("DesktopIconProvider", $"cached icons injected: count={_cached.Count}");
+    }
+
+    private static IconSourceMode ResolveSourceMode(string lastSourceError, int iconCount)
+    {
+        if (iconCount == 0)
+        {
+            return IconSourceMode.CachedOnly;
+        }
+
+        if (lastSourceError.Contains("native-partial-mapping-active", StringComparison.OrdinalIgnoreCase))
+        {
+            return IconSourceMode.NativePartial;
+        }
+
+        if (lastSourceError.Contains("fallback-grid", StringComparison.OrdinalIgnoreCase))
+        {
+            return IconSourceMode.FallbackGrid;
+        }
+
+        if (lastSourceError.Contains("native", StringComparison.OrdinalIgnoreCase))
+        {
+            return IconSourceMode.NativeComplete;
+        }
+
+        return IconSourceMode.Unknown;
     }
 }
 

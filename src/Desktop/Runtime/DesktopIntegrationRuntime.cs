@@ -31,7 +31,9 @@ public sealed record RuntimeHealthSnapshot(
     int ConsecutiveFailures,
     bool IsInRecoveryMode,
     int InfoLogCount,
-    int WarnLogCount);
+    int WarnLogCount,
+    IconSourceMode IconSourceMode,
+    string LastSourceError);
 
 public sealed class DesktopIntegrationRuntime
 {
@@ -123,18 +125,20 @@ public sealed class DesktopIntegrationRuntime
             ConsecutiveFailures: _scheduler.ConsecutiveFailures,
             IsInRecoveryMode: _scheduler.IsInRecoveryMode,
             InfoLogCount: _diagnostics.CountByLevel("Info"),
-            WarnLogCount: _diagnostics.CountByLevel("Warn"));
+            WarnLogCount: _diagnostics.CountByLevel("Warn"),
+            IconSourceMode: _iconProvider is DesktopIconProvider dip ? dip.LastSourceMode : IconSourceMode.Unknown,
+            LastSourceError: _iconProvider is DesktopIconProvider dep ? dep.LastSourceError : string.Empty);
     }
 
     private static RuntimeAdvisory ResolveAdvisory(IDesktopIconProvider provider, int iconCount)
     {
         if (provider is DesktopIconProvider desktopProvider &&
-            desktopProvider.LastSourceError.Contains("native-partial-mapping-active", StringComparison.OrdinalIgnoreCase))
+            desktopProvider.LastSourceMode == IconSourceMode.NativePartial)
         {
             return RuntimeAdvisory.NativePartialMapping;
         }
 
-        if (iconCount == 0)
+        if (iconCount == 0 || provider is DesktopIconProvider p && p.LastSourceMode == IconSourceMode.CachedOnly)
         {
             return RuntimeAdvisory.UseCachedIcons;
         }

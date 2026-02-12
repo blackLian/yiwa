@@ -21,6 +21,8 @@ def main() -> None:
             "if (notice != RuntimeUserNotice.None && changed)",
             "RuntimeAdvisory.NativePartialMapping",
             "IconInteractionPartial",
+            "source={health.IconSourceMode}",
+            "lastError={health.LastSourceError}",
         ],
     )
 
@@ -108,6 +110,7 @@ def main() -> None:
             "public int SourceFailureCount",
             "public int ConsecutiveSourceFailures",
             "public string LastSourceError",
+            "public IconSourceMode LastSourceMode",
             "ConsecutiveSourceFailures = 0;",
             "ConsecutiveSourceFailures++;",
             "IDesktopIconSourceHealthProvider",

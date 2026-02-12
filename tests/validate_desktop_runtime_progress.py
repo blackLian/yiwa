@@ -21,6 +21,9 @@ def main() -> None:
             "RuntimeAdvisory.EnterRecoveryMode",
             "ResolveAdvisory(IDesktopIconProvider provider, int iconCount)",
             "RuntimeAdvisory.NativePartialMapping",
+            "IconSourceMode: _iconProvider is DesktopIconProvider",
+            "LastSourceError",
+            "IconSourceMode",
         ],
     )
 
@@ -30,6 +33,8 @@ def main() -> None:
             "public bool LastRefreshSucceeded",
             "public int CachedCount => _cached.Count",
             "class EmptyDesktopIconSource",
+            "ResolveSourceMode",
+            "public IconSourceMode LastSourceMode",
         ],
     )
 
