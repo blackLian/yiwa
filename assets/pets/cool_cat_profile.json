@@ -1,0 +1,14 @@
+{
+  "id": "cool",
+  "displayName": "高冷傲娇猫",
+  "poseAssets": [
+    "cool_stand_formal.3dgs",
+    "cool_side_stand.3dgs",
+    "cool_far_look.3dgs"
+  ],
+  "behavior": {
+    "mouseAvoidProbability": 0.8,
+    "iconCuriosityProbability": 0.2,
+    "clickWalkAwayProbability": 0.8
+  }
+}
