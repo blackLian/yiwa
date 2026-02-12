@@ -9,6 +9,7 @@ public enum RuntimeUserNotice
     IconInteractionUnavailable,
     RuntimeRecoveryMode,
     IconInteractionPartial,
+    IconInteractionFallbackGrid,
 }
 
 public sealed record RuntimeUpdateResult(
@@ -76,6 +77,10 @@ public sealed class DesktopRuntimeOperator
         if (tick.Advisory == RuntimeAdvisory.NativePartialMapping)
         {
             return (RuntimeUserNotice.IconInteractionPartial, $"图标交互部分可用：native 数据不完整，已自动补全回退网格（lastError={health.LastSourceError}）。");
+        }
+        if (tick.Advisory == RuntimeAdvisory.FallbackGridMapping)
+        {
+            return (RuntimeUserNotice.IconInteractionFallbackGrid, $"图标交互正在使用回退网格映射（source={health.IconSourceMode}，lastError={health.LastSourceError}）。");
         }
 
         return (RuntimeUserNotice.None, string.Empty);

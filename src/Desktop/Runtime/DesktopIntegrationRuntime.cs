@@ -12,6 +12,7 @@ public enum RuntimeAdvisory
     UseCachedIcons,
     EnterRecoveryMode,
     NativePartialMapping,
+    FallbackGridMapping,
 }
 
 public sealed record RuntimeTickResult(
@@ -132,13 +133,25 @@ public sealed class DesktopIntegrationRuntime
 
     private static RuntimeAdvisory ResolveAdvisory(IDesktopIconProvider provider, int iconCount)
     {
-        if (provider is DesktopIconProvider desktopProvider &&
-            desktopProvider.LastSourceMode == IconSourceMode.NativePartial)
+        if (provider is DesktopIconProvider desktopProvider)
         {
-            return RuntimeAdvisory.NativePartialMapping;
+            if (desktopProvider.LastSourceMode == IconSourceMode.NativePartial)
+            {
+                return RuntimeAdvisory.NativePartialMapping;
+            }
+
+            if (desktopProvider.LastSourceMode == IconSourceMode.FallbackGrid)
+            {
+                return RuntimeAdvisory.FallbackGridMapping;
+            }
+
+            if (desktopProvider.LastSourceMode == IconSourceMode.CachedOnly)
+            {
+                return RuntimeAdvisory.UseCachedIcons;
+            }
         }
 
-        if (iconCount == 0 || provider is DesktopIconProvider p && p.LastSourceMode == IconSourceMode.CachedOnly)
+        if (iconCount == 0)
         {
             return RuntimeAdvisory.UseCachedIcons;
         }

@@ -21,6 +21,7 @@ def main() -> None:
             "RuntimeAdvisory.EnterRecoveryMode",
             "ResolveAdvisory(IDesktopIconProvider provider, int iconCount)",
             "RuntimeAdvisory.NativePartialMapping",
+            "RuntimeAdvisory.FallbackGridMapping",
             "IconSourceMode: _iconProvider is DesktopIconProvider",
             "LastSourceError",
             "IconSourceMode",

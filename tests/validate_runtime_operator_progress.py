@@ -21,6 +21,8 @@ def main() -> None:
             "if (notice != RuntimeUserNotice.None && changed)",
             "RuntimeAdvisory.NativePartialMapping",
             "IconInteractionPartial",
+            "IconInteractionFallbackGrid",
+            "RuntimeAdvisory.FallbackGridMapping",
             "source={health.IconSourceMode}",
             "lastError={health.LastSourceError}",
         ],

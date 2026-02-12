@@ -24,7 +24,7 @@
 
 5. 使用 `DesktopIntegrationRuntime.Tick(...)` 查看 `RuntimeTickResult`（Executed/Succeeded/PollingHz）确认调度退避与恢复。
 
-6. 检查 `RuntimeTickResult.Advisory`：无图标时应为 `UseCachedIcons`，native 部分映射应为 `NativePartialMapping`，连续失败降频后应出现 `EnterRecoveryMode`。
+6. 检查 `RuntimeTickResult.Advisory`：无图标时应为 `UseCachedIcons`，native 部分映射应为 `NativePartialMapping`，回退网格映射应为 `FallbackGridMapping`，连续失败降频后应出现 `EnterRecoveryMode`。
 
 7. 调用 `DesktopIntegrationRuntime.GetHealthSnapshot()`，确认 `ConsecutiveFailures`、`IsInRecoveryMode`、Info/Warn 计数，以及 `IconSourceMode/LastSourceError` 符合预期。
 
